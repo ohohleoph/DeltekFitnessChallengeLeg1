@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deltek PH Fitness — Leg 1</title>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { background: #0a0f2e; font-family: 'Figtree', sans-serif; min-height: 100vh; }
+    input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+    input[type=date]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; }
+    @keyframes fadeUp   { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes pulse    { 0%,100%{transform:scale(1);} 50%{transform:scale(1.04);} }
+    @keyframes shimmer  { 0%{background-position:-200% center;} 100%{background-position:200% center;} }
+    @keyframes slideIn  { from{opacity:0;transform:translateX(24px);} to{opacity:1;transform:translateX(0);} }
+    @keyframes toastIn  { from{opacity:0;transform:translateY(20px) scale(.95);} to{opacity:1;transform:translateY(0) scale(1);} }
+    ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #0a0f2e; } ::-webkit-scrollbar-thumb { background: #1742F6; border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+/* ─── Brand ─────────────────────────────────────────── */
+const B = {
+  NAVY:'#081581', BLUE:'#1742F6', TEAL:'#00B6C3',
+  CHAR:'#3C454E', MAG:'#C200CC', PUR:'#6D18F1',
+  SKY:'#3893FF',  WHT:'#FFFFFF', BG:'#0a0f2e',
+  CARD:'#111a45', BORDER:'rgba(255,255,255,0.08)',
+  MUTED:'rgba(255,255,255,0.45)',
+};
+const CAT = { '5K':B.TEAL, '10K':B.BLUE, '16K':B.PUR };
+const CATS = ['5K','10K','16K'];
+
+/* ─── Helpers ────────────────────────────────────────── */
+const pad   = v => String(parseInt(v)||0).padStart(2,'0');
+const clamp = (v,max) => Math.min(parseInt(v)||0, max);
+const toSec = (h,m,s) => parseInt(h)*3600+parseInt(m)*60+parseInt(s);
+const fmtT  = (h,m,s) => `${pad(h)}:${pad(m)}:${pad(s)}`;
+const parseT= t => { const [h,m,s]=(t||'00:00:00').split(':'); return toSec(h,m,s); };
+const todayStr = () => new Date().toISOString().split('T')[0];
+
+/* ─── Demo seeds ─────────────────────────────────────── */
+const SEEDS = [
+  {id:1,bib:'EMP-001',cat:'5K', time:'00:24:13',date:'2026-04-10',file:'run_001.jpg'},
+  {id:2,bib:'EMP-002',cat:'10K',time:'00:51:42',date:'2026-04-11',file:'run_002.jpg'},
+  {id:3,bib:'EMP-003',cat:'16K',time:'01:28:05',date:'2026-04-12',file:'run_003.jpg'},
+  {id:4,bib:'EMP-001',cat:'5K', time:'00:23:55',date:'2026-04-17',file:'run_004.jpg'},
+  {id:5,bib:'EMP-004',cat:'10K',time:'00:49:20',date:'2026-04-18',file:'run_005.jpg'},
+  {id:6,bib:'EMP-005',cat:'16K',time:'01:35:10',date:'2026-04-19',file:'run_006.jpg'},
+  {id:7,bib:'EMP-006',cat:'5K', time:'00:26:40',date:'2026-05-02',file:'run_007.jpg'},
+  {id:8,bib:'EMP-007',cat:'10K',time:'00:55:15',date:'2026-05-03',file:'run_008.jpg'},
+  {id:9,bib:'EMP-008',cat:'16K',time:'01:22:33',date:'2026-05-10',file:'run_009.jpg'},
+  {id:10,bib:'EMP-002',cat:'5K',time:'00:22:10',date:'2026-05-15',file:'run_010.jpg'},
+];
+
+/* ─── Toast ──────────────────────────────────────────── */
+function Toast({msg,type='success',onClose}) {
+  useEffect(()=>{ const t=setTimeout(onClose,3500); return ()=>clearTimeout(t); },[]);
+  const bg = type==='error' ? B.MAG : B.TEAL;
+  return (
+    <div style={{
+      position:'fixed',bottom:28,right:28,zIndex:9999,
+      background:bg,color:'#fff',borderRadius:12,
+      padding:'14px 22px',fontWeight:700,fontSize:14,
+      boxShadow:'0 8px 40px rgba(0,0,0,.5)',
+      animation:'toastIn .35s ease',display:'flex',alignItems:'center',gap:10,
+      fontFamily:'Figtree,sans-serif',
+    }}>
+      <span style={{fontSize:18}}>{type==='error'?'⚠':'✓'}</span>{msg}
+    </div>
+  );
+}
+
+/* ─── Nav ────────────────────────────────────────────── */
+function Nav({tab,setTab}) {
+  const tabs = [
+    {key:'form',    icon:'📝', label:'Submit Run'},
+    {key:'dash',    icon:'📊', label:'Dashboard'},
+  ];
+  return (
+    <nav style={{background:B.NAVY,borderBottom:`1px solid ${B.BORDER}`,position:'sticky',top:0,zIndex:100}}>
+      <div style={{maxWidth:1140,margin:'0 auto',padding:'0 24px',display:'flex',alignItems:'center',gap:0}}>
+        {/* Logo */}
+        <div style={{paddingRight:28,paddingTop:14,paddingBottom:14,borderRight:`1px solid ${B.BORDER}`,marginRight:24}}>
+          <div style={{fontWeight:900,color:'#fff',fontSize:20,letterSpacing:'-0.5px'}}>deltek</div>
+          <div style={{color:B.TEAL,fontSize:8,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',marginTop:-1}}>Speed. Clarity. Control.</div>
+        </div>
+        <div style={{color:'rgba(255,255,255,.7)',fontSize:13,fontWeight:600,flex:1}}>PH Fitness Challenge — Leg 1</div>
+        {/* Tabs */}
+        <div style={{display:'flex'}}>
+          {tabs.map(t=>(
+            <button key={t.key} onClick={()=>setTab(t.key)} style={{
+              padding:'16px 20px',border:'none',cursor:'pointer',background:'transparent',
+              fontFamily:'Figtree,sans-serif',fontWeight:700,fontSize:13,
+              color:tab===t.key?'#fff':'rgba(255,255,255,.45)',
+              borderBottom:tab===t.key?`3px solid ${B.TEAL}`:'3px solid transparent',
+              transition:'all .18s',whiteSpace:'nowrap',
+            }}>{t.icon}&nbsp;&nbsp;{t.label}</button>
+          ))}
+        </div>
+      </div>
+      {/* Sub-bar */}
+      <div style={{background:'rgba(0,0,0,.2)',padding:'7px 24px'}}>
+        <div style={{maxWidth:1140,margin:'0 auto',display:'flex',gap:24,flexWrap:'wrap'}}>
+          {[['Event','Leg 1 — 3 Month Challenge'],['Period','Apr – Jun 2026'],['Categories','5K · 10K · 16K'],['Status','🟢 Open for Submissions']].map(([k,v])=>(
+            <div key={k} style={{display:'flex',gap:7,alignItems:'center'}}>
+              <span style={{fontSize:10,color:'rgba(255,255,255,.35)',letterSpacing:'1px',textTransform:'uppercase'}}>{k}:</span>
+              <span style={{fontSize:11,color:B.TEAL,fontWeight:700}}>{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+/* ─── FORM ───────────────────────────────────────────── */
+function Form({onSubmit}) {
+  const [bib,setBib]       = useState('');
+  const [cat,setCat]       = useState('');
+  const [hh,setHh]         = useState('00');
+  const [mm,setMm]         = useState('00');
+  const [ss,setSs]         = useState('00');
+  const [date,setDate]     = useState(todayStr());
+  const [file,setFile]     = useState(null);
+  const [fileName,setFN]   = useState('');
+  const [errors,setErrors] = useState({});
+  const [busy,setBusy]     = useState(false);
+  const [done,setDone]     = useState(false);
+  const fileRef = useRef();
+
+  function validate() {
+    const e={};
+    if(!bib.trim())                      e.bib  = 'Bib / Employee number is required.';
+    if(!cat)                             e.cat  = 'Please select a run category.';
+    if(toSec(hh,mm,ss)<=0)              e.time = 'Please enter a valid finish time.';
+    if(!date)                            e.date = 'Run date is required.';
+    if(!file)                            e.file = 'Please upload your run screenshot.';
+    return e;
+  }
+
+  async function handleSubmit(ev) {
+    ev.preventDefault();
+    const errs=validate();
+    if(Object.keys(errs).length){ setErrors(errs); return; }
+    setBusy(true);
+    await new Promise(r=>setTimeout(r,1000));
+    onSubmit({ bib:bib.trim().toUpperCase(), cat, time:fmtT(hh,mm,ss), date, file:fileName });
+    setBib(''); setCat(''); setHh('00'); setMm('00'); setSs('00');
+    setDate(todayStr()); setFile(null); setFN(''); setErrors({});
+    setBusy(false); setDone(true);
+    setTimeout(()=>setDone(false),3500);
+  }
+
+  const inp = (err) => ({
+    width:'100%',padding:'12px 16px',borderRadius:10,
+    border:`1.5px solid ${err?B.MAG:'rgba(255,255,255,0.12)'}`,
+    background:'rgba(255,255,255,0.05)',color:'#fff',
+    fontFamily:'Figtree,sans-serif',fontSize:15,outline:'none',
+    transition:'border .2s',
+  });
+  const lbl = { display:'block',marginBottom:7,fontWeight:700,fontSize:12,
+    letterSpacing:'1px',textTransform:'uppercase',color:'rgba(255,255,255,.6)' };
+  const req = { color:B.MAG,marginLeft:3 };
+  const err = { color:B.MAG,fontSize:12,marginTop:5,fontWeight:600 };
+
+  return (
+    <div style={{maxWidth:580,margin:'0 auto',padding:'40px 24px',animation:'fadeUp .5s ease'}}>
+      {/* Card */}
+      <div style={{background:B.CARD,borderRadius:20,overflow:'hidden',border:`1px solid ${B.BORDER}`,boxShadow:'0 20px 60px rgba(0,0,0,.5)'}}>
+
+        {/* Card header */}
+        <div style={{background:`linear-gradient(135deg, ${B.NAVY} 0%, #0d1f6e 100%)`,padding:'28px 32px',borderBottom:`1px solid ${B.BORDER}`}}>
+          <div style={{color:B.TEAL,fontSize:10,fontWeight:700,letterSpacing:'3px',textTransform:'uppercase',marginBottom:8}}>Deltek PH Fitness Challenge</div>
+          <div style={{color:'#fff',fontSize:22,fontWeight:900,letterSpacing:'.3px'}}>Leg 1 — Run Submission</div>
+          <div style={{marginTop:10,height:2,width:48,background:B.TEAL,borderRadius:2}}/>
+          <div style={{marginTop:10,color:'rgba(255,255,255,.45)',fontSize:12}}>
+            Fields marked <span style={req}>*</span> are required.
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{padding:'28px 32px 32px'}}>
+
+          {/* Bib */}
+          <div style={{marginBottom:22}}>
+            <label style={lbl}>Bib Number (Employee ID)<span style={req}>*</span></label>
+            <input type="text" placeholder="e.g. EMP-12345" value={bib}
+              onChange={e=>{setBib(e.target.value);setErrors(p=>({...p,bib:undefined}));}}
+              style={inp(errors.bib)}/>
+            {errors.bib&&<div style={err}>{errors.bib}</div>}
+          </div>
+
+          {/* Category */}
+          <div style={{marginBottom:22}}>
+            <label style={lbl}>Run Category<span style={req}>*</span></label>
+            <div style={{display:'flex',gap:10}}>
+              {CATS.map(c=>(
+                <button type="button" key={c} onClick={()=>{setCat(c);setErrors(p=>({...p,cat:undefined}));}} style={{
+                  flex:1,padding:'13px 0',borderRadius:10,cursor:'pointer',fontFamily:'Figtree,sans-serif',
+                  fontWeight:800,fontSize:17,transition:'all .18s',
+                  border:`2px solid ${cat===c?CAT[c]:'rgba(255,255,255,0.12)'}`,
+                  background:cat===c?`${CAT[c]}22`:'transparent',
+                  color:cat===c?CAT[c]:'rgba(255,255,255,.5)',
+                }}>{c}</button>
+              ))}
+            </div>
+            {errors.cat&&<div style={err}>{errors.cat}</div>}
+          </div>
+
+          {/* Time */}
+          <div style={{marginBottom:22}}>
+            <label style={lbl}>Finish Time (hh : mm : ss)<span style={req}>*</span></label>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              {[{v:hh,s:setHh,max:23,l:'HH'},{v:mm,s:setMm,max:59,l:'MM'},{v:ss,s:setSs,max:59,l:'SS'}].map(({v,s,max,l},i)=>(
+                <div key={l} style={{display:'flex',alignItems:'center',gap:10}}>
+                  {i>0&&<span style={{fontSize:24,fontWeight:900,color:'rgba(255,255,255,.4)',lineHeight:1}}>:</span>}
+                  <div style={{textAlign:'center'}}>
+                    <input type="number" min="0" max={max} value={v}
+                      onChange={e=>{s(String(clamp(e.target.value,max)).padStart(2,'0'));setErrors(p=>({...p,time:undefined}));}}
+                      onBlur={e=>s(pad(e.target.value))}
+                      style={{...inp(errors.time),width:72,textAlign:'center',fontSize:24,fontWeight:900,padding:'10px 4px',letterSpacing:'1px'}}/>
+                    <div style={{fontSize:9,color:'rgba(255,255,255,.3)',marginTop:3,letterSpacing:'1px',fontWeight:700}}>{l}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {errors.time&&<div style={err}>{errors.time}</div>}
+          </div>
+
+          {/* Date */}
+          <div style={{marginBottom:22}}>
+            <label style={lbl}>Run Date<span style={req}>*</span></label>
+            <input type="date" value={date}
+              onChange={e=>{setDate(e.target.value);setErrors(p=>({...p,date:undefined}));}}
+              style={{...inp(errors.date),colorScheme:'dark'}}/>
+            {errors.date&&<div style={err}>{errors.date}</div>}
+          </div>
+
+          {/* Screenshot */}
+          <div style={{marginBottom:30}}>
+            <label style={lbl}>Run Screenshot<span style={req}>*</span></label>
+            <div onClick={()=>fileRef.current.click()} style={{
+              border:`2px dashed ${errors.file?B.MAG:file?B.TEAL:'rgba(255,255,255,0.15)'}`,
+              borderRadius:12,padding:'24px 16px',textAlign:'center',cursor:'pointer',
+              background:file?`${B.TEAL}0d`:'rgba(255,255,255,0.03)',transition:'all .2s',
+            }}>
+              <div style={{fontSize:30,marginBottom:8}}>{file?'📎':'📷'}</div>
+              <div style={{color:file?B.TEAL:'rgba(255,255,255,.5)',fontWeight:700,fontSize:14}}>
+                {file?fileName:'Click to upload screenshot'}
+              </div>
+              <div style={{color:'rgba(255,255,255,.25)',fontSize:12,marginTop:4}}>PNG, JPG, HEIC — max 10MB</div>
+            </div>
+            <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}}
+              onChange={e=>{const f=e.target.files[0];if(f){setFile(f);setFN(f.name);setErrors(p=>({...p,file:undefined}));}}}/>
+            {errors.file&&<div style={err}>{errors.file}</div>}
+          </div>
+
+          {/* Submit */}
+          <button type="submit" disabled={busy} style={{
+            width:'100%',padding:'15px',borderRadius:12,border:'none',cursor:busy?'not-allowed':'pointer',
+            background:busy?B.CHAR:B.BLUE,color:'#fff',
+            fontFamily:'Figtree,sans-serif',fontWeight:900,fontSize:16,
+            letterSpacing:'.5px',transition:'background .2s',
+            boxShadow:busy?'none':'0 4px 20px rgba(23,66,246,.5)',
+          }}>{busy?'Submitting…':'Submit Run →'}</button>
+
+          <div style={{marginTop:14,textAlign:'center',color:'rgba(255,255,255,.25)',fontSize:12}}>
+            Submissions are reviewed by the Fitness Challenge committee.
+          </div>
+        </form>
+      </div>
+      {done&&<Toast msg="Run submitted successfully! 🏃" onClose={()=>setDone(false)}/>}
+    </div>
+  );
+}
+
+/* ─── DASHBOARD ──────────────────────────────────────── */
+const MEDALS = ['🥇','🥈','🥉'];
+const MEDAL_COLORS = ['#FFD700','#C0C0C0','#CD7F32'];
+const RANK_BG = ['rgba(255,215,0,.10)','rgba(192,192,192,.08)','rgba(205,127,50,.08)'];
+
+function Dashboard({entries}) {
+  const [filter,setFilter]  = useState('All');
+  const [search,setSearch]  = useState('');
+  const [sortBy,setSortBy]  = useState('time');
+  const [sortDir,setSortDir]= useState('asc');
+  const [activeCat,setActiveCat] = useState('5K');
+
+  /* top-3 per category — unique best time per bib */
+  const top3 = CATS.reduce((acc,c)=>{
+    const ce = entries.filter(e=>e.cat===c);
+    /* best entry per bib */
+    const bestPerBib = Object.values(
+      ce.reduce((m,e)=>{
+        if(!m[e.bib]||parseT(e.time)<parseT(m[e.bib].time)) m[e.bib]=e;
+        return m;
+      },{})
+    );
+    acc[c] = bestPerBib.sort((a,b)=>parseT(a.time)-parseT(b.time)).slice(0,3);
+    return acc;
+  },{});
+
+  const stats = [
+    {label:'Total Submissions',value:entries.length,color:B.BLUE},
+    {label:'5K Runners',value:new Set(entries.filter(e=>e.cat==='5K').map(e=>e.bib)).size,color:B.TEAL},
+    {label:'10K Runners',value:new Set(entries.filter(e=>e.cat==='10K').map(e=>e.bib)).size,color:B.BLUE},
+    {label:'16K Runners',value:new Set(entries.filter(e=>e.cat==='16K').map(e=>e.bib)).size,color:B.PUR},
+  ];
+
+  const visible = entries
+    .filter(e=>(filter==='All'||e.cat===filter)&&e.bib.toLowerCase().includes(search.toLowerCase()))
+    .sort((a,b)=>{
+      let cmp=0;
+      if(sortBy==='time') cmp=parseT(a.time)-parseT(b.time);
+      else if(sortBy==='bib') cmp=a.bib.localeCompare(b.bib);
+      else if(sortBy==='date') cmp=a.date.localeCompare(b.date);
+      else if(sortBy==='cat') cmp=a.cat.localeCompare(b.cat);
+      return sortDir==='asc'?cmp:-cmp;
+    });
+
+  /* rank lookup: for each entry, what rank is it in its category top3? */
+  const rankMap = {};
+  CATS.forEach(c=>{
+    top3[c].forEach((e,i)=>{ rankMap[e.id]=i; });
+  });
+
+  function sort(col){if(sortBy===col)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortBy(col);setSortDir('asc');}}
+
+  const th={padding:'11px 14px',fontWeight:700,fontSize:11,letterSpacing:'1px',textTransform:'uppercase',
+    color:'rgba(255,255,255,.4)',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap',
+    borderBottom:`1px solid ${B.BORDER}`,background:'rgba(0,0,0,.2)'};
+  const td={padding:'13px 14px',fontSize:14,color:'rgba(255,255,255,.8)',borderBottom:`1px solid ${B.BORDER}`};
+
+  return (
+    <div style={{maxWidth:1140,margin:'0 auto',padding:'36px 24px',animation:'fadeUp .5s ease'}}>
+
+      {/* ── TOP 3 PODIUM SECTION ── */}
+      <div style={{marginBottom:36}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:20,flexWrap:'wrap',gap:12}}>
+          <div>
+            <div style={{fontWeight:900,fontSize:20,color:'#fff',letterSpacing:'.2px'}}>🏆 Top 3 Fastest — Leg 1</div>
+            <div style={{fontSize:13,color:'rgba(255,255,255,.35)',marginTop:3}}>Best time per runner · Select a category</div>
+          </div>
+          {/* Category selector tabs */}
+          <div style={{display:'flex',gap:8,background:'rgba(0,0,0,.3)',borderRadius:12,padding:4}}>
+            {CATS.map(c=>(
+              <button key={c} onClick={()=>setActiveCat(c)} style={{
+                padding:'8px 22px',borderRadius:9,border:'none',cursor:'pointer',
+                fontFamily:'Figtree,sans-serif',fontWeight:800,fontSize:14,transition:'all .2s',
+                background:activeCat===c?CAT[c]:'transparent',
+                color:activeCat===c?'#fff':'rgba(255,255,255,.4)',
+                boxShadow:activeCat===c?`0 4px 16px ${CAT[c]}44`:'none',
+              }}>{c}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Podium for active category */}
+        {CATS.map(c=>(
+          <div key={c} style={{display:activeCat===c?'block':'none',animation:'fadeUp .3s ease'}}>
+            {top3[c].length===0?(
+              <div style={{background:B.CARD,borderRadius:16,padding:'40px',textAlign:'center',border:`1px solid ${B.BORDER}`,color:'rgba(255,255,255,.25)',fontSize:15}}>
+                No entries yet for {c} — be the first to submit! 🏃
+              </div>
+            ):(
+              <div>
+                {/* Big winner card */}
+                {top3[c][0]&&(
+                  <div style={{
+                    background:`linear-gradient(135deg, ${B.CARD} 0%, rgba(255,215,0,.06) 100%)`,
+                    borderRadius:20,padding:'28px 32px',border:`1px solid rgba(255,215,0,.25)`,
+                    marginBottom:14,position:'relative',overflow:'hidden',
+                    boxShadow:'0 8px 40px rgba(0,0,0,.4)',
+                  }}>
+                    {/* Decorative bg number */}
+                    <div style={{position:'absolute',right:24,top:'50%',transform:'translateY(-50%)',
+                      fontSize:120,fontWeight:900,color:'rgba(255,215,0,.04)',lineHeight:1,pointerEvents:'none',
+                      fontFamily:'monospace'}}>1</div>
+                    <div style={{display:'flex',alignItems:'center',gap:24,flexWrap:'wrap'}}>
+                      {/* Medal */}
+                      <div style={{fontSize:52,lineHeight:1}}>🥇</div>
+                      {/* Info */}
+                      <div style={{flex:1,minWidth:200}}>
+                        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6}}>
+                          <span style={{background:`${CAT[c]}22`,color:CAT[c],fontWeight:800,fontSize:12,
+                            padding:'3px 12px',borderRadius:20,letterSpacing:'.5px'}}>{c}</span>
+                          <span style={{color:'#FFD700',fontWeight:700,fontSize:12}}>1st Place</span>
+                        </div>
+                        <div style={{fontSize:42,fontWeight:900,color:'#fff',letterSpacing:'2px',fontFamily:'monospace',lineHeight:1}}>
+                          {top3[c][0].time}
+                        </div>
+                        <div style={{marginTop:8,fontSize:16,fontWeight:700,color:'#FFD700'}}>{top3[c][0].bib}</div>
+                        <div style={{fontSize:12,color:'rgba(255,255,255,.35)',marginTop:3}}>Run on {top3[c][0].date}</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {/* 2nd and 3rd place side by side */}
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+                  {[1,2].map(rank=>(
+                    top3[c][rank]?(
+                      <div key={rank} style={{
+                        background:`linear-gradient(135deg, ${B.CARD} 0%, ${RANK_BG[rank]} 100%)`,
+                        borderRadius:16,padding:'20px 24px',
+                        border:`1px solid ${rank===1?'rgba(192,192,192,.2)':'rgba(205,127,50,.2)'}`,
+                        position:'relative',overflow:'hidden',
+                      }}>
+                        <div style={{position:'absolute',right:16,top:'50%',transform:'translateY(-50%)',
+                          fontSize:64,fontWeight:900,color:`${MEDAL_COLORS[rank]}08`,lineHeight:1,pointerEvents:'none',
+                          fontFamily:'monospace'}}>{rank+1}</div>
+                        <div style={{display:'flex',alignItems:'center',gap:14}}>
+                          <div style={{fontSize:32,lineHeight:1}}>{MEDALS[rank]}</div>
+                          <div>
+                            <div style={{color:MEDAL_COLORS[rank],fontWeight:700,fontSize:11,marginBottom:4}}>
+                              {rank===1?'2nd Place':'3rd Place'}
+                            </div>
+                            <div style={{fontSize:24,fontWeight:900,color:'#fff',letterSpacing:'1px',fontFamily:'monospace'}}>
+                              {top3[c][rank].time}
+                            </div>
+                            <div style={{fontSize:13,fontWeight:700,color:MEDAL_COLORS[rank],marginTop:4}}>{top3[c][rank].bib}</div>
+                            <div style={{fontSize:11,color:'rgba(255,255,255,.3)',marginTop:2}}>Run on {top3[c][rank].date}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ):(
+                      <div key={rank} style={{
+                        background:'rgba(255,255,255,.02)',borderRadius:16,padding:'20px 24px',
+                        border:`1px dashed rgba(255,255,255,.08)`,display:'flex',alignItems:'center',
+                        justifyContent:'center',color:'rgba(255,255,255,.2)',fontSize:13,
+                      }}>
+                        {rank===1?'2nd':'3rd'} place open 🏃
+                      </div>
+                    )
+                  ))}
+                </div>
+
+                {/* Category summary bar */}
+                <div style={{marginTop:14,background:'rgba(0,0,0,.3)',borderRadius:10,padding:'12px 20px',
+                  display:'flex',gap:24,flexWrap:'wrap',border:`1px solid ${B.BORDER}`}}>
+                  {[
+                    ['Total Entries', entries.filter(e=>e.cat===c).length],
+                    ['Unique Runners', new Set(entries.filter(e=>e.cat===c).map(e=>e.bib)).size],
+                    ['Fastest Time', top3[c][0]?.time||'—'],
+                  ].map(([label,val])=>(
+                    <div key={label} style={{display:'flex',gap:8,alignItems:'center'}}>
+                      <span style={{fontSize:11,color:'rgba(255,255,255,.3)',textTransform:'uppercase',letterSpacing:'1px'}}>{label}:</span>
+                      <span style={{fontSize:13,color:CAT[c],fontWeight:700}}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* ── ALL CATEGORIES QUICK VIEW ── */}
+      <div style={{marginBottom:32}}>
+        <div style={{fontWeight:800,fontSize:15,color:'rgba(255,255,255,.6)',marginBottom:14,letterSpacing:'.5px',textTransform:'uppercase',fontSize:12}}>
+          All Categories — Top 3 at a Glance
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:14}}>
+          {CATS.map(c=>(
+            <div key={c} style={{background:B.CARD,borderRadius:14,overflow:'hidden',border:`1px solid ${B.BORDER}`,
+              borderTop:`3px solid ${CAT[c]}`,cursor:'pointer',transition:'transform .15s'}}
+              onClick={()=>setActiveCat(c)}
+              onMouseEnter={e=>e.currentTarget.style.transform='translateY(-2px)'}
+              onMouseLeave={e=>e.currentTarget.style.transform='translateY(0)'}>
+              <div style={{padding:'14px 18px 10px'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+                  <span style={{background:`${CAT[c]}22`,color:CAT[c],fontWeight:800,fontSize:13,padding:'3px 12px',borderRadius:20}}>{c}</span>
+                  <span style={{fontSize:10,color:'rgba(255,255,255,.3)'}}>{entries.filter(e=>e.cat===c).length} entries</span>
+                </div>
+                {top3[c].slice(0,3).map((e,i)=>(
+                  <div key={e.id} style={{display:'flex',alignItems:'center',gap:10,padding:'6px 0',
+                    borderBottom:i<Math.min(top3[c].length-1,2)?`1px solid ${B.BORDER}`:'none'}}>
+                    <span style={{fontSize:16,width:22,textAlign:'center'}}>{MEDALS[i]}</span>
+                    <span style={{fontFamily:'monospace',fontWeight:700,fontSize:14,color:i===0?'#FFD700':i===1?'#C0C0C0':'#CD7F32',flex:1}}>{e.time}</span>
+                    <span style={{fontSize:12,color:'rgba(255,255,255,.4)',fontWeight:600}}>{e.bib}</span>
+                  </div>
+                ))}
+                {top3[c].length===0&&(
+                  <div style={{fontSize:12,color:'rgba(255,255,255,.2)',padding:'8px 0'}}>No entries yet</div>
+                )}
+              </div>
+              <div style={{background:`${CAT[c]}10`,padding:'7px 18px',borderTop:`1px solid ${CAT[c]}18`}}>
+                <span style={{fontSize:11,color:CAT[c],fontWeight:700}}>Click to view full podium →</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── STATS ── */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:14,marginBottom:32}}>
+        {stats.map(s=>(
+          <div key={s.label} style={{background:B.CARD,borderRadius:12,padding:'18px 20px',border:`1px solid ${B.BORDER}`,borderLeft:`4px solid ${s.color}`}}>
+            <div style={{fontSize:32,fontWeight:900,color:s.color}}>{s.value}</div>
+            <div style={{fontSize:12,color:'rgba(255,255,255,.4)',marginTop:4}}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── FULL LEADERBOARD TABLE ── */}
+      <div style={{marginBottom:14}}>
+        <div style={{fontWeight:900,fontSize:16,color:'#fff',marginBottom:4}}>📋 All Submissions</div>
+        <div style={{fontSize:13,color:'rgba(255,255,255,.35)'}}>🥇🥈🥉 medals indicate top 3 in that category</div>
+      </div>
+
+      {/* Controls */}
+      <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:14,flexWrap:'wrap'}}>
+        <input placeholder="Search by Bib…" value={search} onChange={e=>setSearch(e.target.value)} style={{
+          padding:'9px 14px',borderRadius:8,border:`1px solid ${B.BORDER}`,
+          background:'rgba(255,255,255,.06)',color:'#fff',fontFamily:'Figtree,sans-serif',
+          fontSize:14,outline:'none',width:180,
+        }}/>
+        <div style={{display:'flex',gap:8}}>
+          {['All',...CATS].map(c=>(
+            <button key={c} onClick={()=>setFilter(c)} style={{
+              padding:'8px 16px',borderRadius:20,border:'none',cursor:'pointer',
+              fontFamily:'Figtree,sans-serif',fontWeight:700,fontSize:13,transition:'all .15s',
+              background:filter===c?(c==='All'?B.BLUE:CAT[c]):'rgba(255,255,255,.08)',
+              color:filter===c?'#fff':'rgba(255,255,255,.5)',
+            }}>{c}</button>
+          ))}
+        </div>
+        <div style={{marginLeft:'auto',fontSize:12,color:'rgba(255,255,255,.3)'}}>
+          {visible.length} record{visible.length!==1?'s':''}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{background:B.CARD,borderRadius:14,overflow:'hidden',border:`1px solid ${B.BORDER}`}}>
+        <div style={{overflowX:'auto'}}>
+          <table style={{width:'100%',borderCollapse:'collapse'}}>
+            <thead>
+              <tr>
+                <th style={{...th,width:44,textAlign:'center'}}>Rank</th>
+                {[['bib','Bib / Employee'],['cat','Category'],['time','Finish Time'],['date','Run Date'],['file','Screenshot',true]].map(([col,label,noSort])=>(
+                  <th key={col} style={{...th,color:sortBy===col?B.TEAL:'rgba(255,255,255,.4)'}} onClick={()=>!noSort&&sort(col)}>
+                    {label}{!noSort&&sortBy===col&&<span style={{marginLeft:4}}>{sortDir==='asc'?'↑':'↓'}</span>}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visible.length===0?(
+                <tr><td colSpan={6} style={{...td,textAlign:'center',padding:36,color:'rgba(255,255,255,.25)'}}>No entries found.</td></tr>
+              ):visible.map((e,i)=>{
+                const rank = rankMap[e.id];
+                const isTop3 = rank!==undefined;
+                const rowBg = isTop3?RANK_BG[rank]:(i%2===0?'transparent':'rgba(255,255,255,.02)');
+                return (
+                  <tr key={e.id} style={{background:rowBg,transition:'background .15s'}}
+                    onMouseEnter={ev=>ev.currentTarget.style.background='rgba(23,66,246,.12)'}
+                    onMouseLeave={ev=>ev.currentTarget.style.background=rowBg}>
+                    <td style={{...td,textAlign:'center',fontSize:18,width:44}}>
+                      {isTop3?MEDALS[rank]:<span style={{color:'rgba(255,255,255,.2)',fontSize:12}}>—</span>}
+                    </td>
+                    <td style={{...td,fontWeight:700,color:'#fff'}}>{e.bib}</td>
+                    <td style={td}>
+                      <span style={{background:`${CAT[e.cat]}22`,color:CAT[e.cat],padding:'3px 12px',borderRadius:20,fontWeight:700,fontSize:13}}>{e.cat}</span>
+                    </td>
+                    <td style={{...td,fontFamily:'monospace',fontWeight:700,fontSize:15,color:isTop3?MEDAL_COLORS[rank]:'rgba(255,255,255,.8)'}}>
+                      {e.time}
+                    </td>
+                    <td style={td}>{e.date}</td>
+                    <td style={td}>
+                      {e.file?<span style={{color:B.TEAL,fontWeight:600,fontSize:13,display:'flex',alignItems:'center',gap:5}}>📎 {e.file}</span>:'—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── APP ROOT ───────────────────────────────────────── */
+function App() {
+  const [tab,setTab]       = useState('form');
+  const [entries,setEntries]= useState(SEEDS);
+  const [nextId,setNextId] = useState(SEEDS.length+1);
+  const [toast,setToast]   = useState(null);
+
+  function handleSubmit(data) {
+    setEntries(prev=>[...prev,{id:nextId,...data}]);
+    setNextId(n=>n+1);
+    setToast({msg:'Run submitted! Switching to dashboard…',type:'success'});
+    setTimeout(()=>setTab('dash'),1200);
+  }
+
+  return (
+    <div style={{minHeight:'100vh',background:B.BG,fontFamily:'Figtree,sans-serif'}}>
+      <Nav tab={tab} setTab={setTab}/>
+      {tab==='form' &&<Form onSubmit={handleSubmit}/>}
+      {tab==='dash' &&<Dashboard entries={entries}/>}
+      {/* Footer */}
+      <div style={{borderTop:`1px solid ${B.BORDER}`,padding:'18px 24px',marginTop:20}}>
+        <div style={{maxWidth:1140,margin:'0 auto',display:'flex',justifyContent:'space-between',alignItems:'center',flexWrap:'wrap',gap:10}}>
+          <span style={{fontSize:12,color:'rgba(255,255,255,.2)'}}>© 2026 Deltek, Inc. · PH Fitness Challenge · Leg 1</span>
+          <span style={{fontSize:11,color:B.TEAL,fontWeight:700,letterSpacing:'2px',textTransform:'uppercase'}}>Speed. Clarity. Control.</span>
+        </div>
+      </div>
+      {toast&&<Toast msg={toast.msg} type={toast.type} onClose={()=>setToast(null)}/>}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
